@@ -10,15 +10,15 @@ A) Yourself, in a terminal (setup.sh does this for you):
    username and password) and prints the config for Claude.
 
 B) Through Claude Code, which installs everything for you (see
-   INSTALL_WITH_CLAUDE.md). Claude runs two steps:
+   INSTALL_WITH_CLAUDE.md). Claude runs:
 
-       get_token.py https://moodle.example.edu --start
-           opens the Moodle login in your browser. You log in, then
-           right-click "Continue" and copy the link.
-       get_token.py https://moodle.example.edu --finish
-           reads the link from your clipboard, checks the token, clears the
-           clipboard and adds the server to Claude. The token is never
-           printed, so it doesn't end up in the chat.
+       get_token.py https://moodle.example.edu --login
+
+   It opens the Moodle login in your browser. You log in, then right-click
+   "Continue" and copy the link. The script notices the link in the
+   clipboard, checks the token, clears the clipboard and adds the server to
+   Claude. The token is never printed, so it doesn't end up in the chat.
+   (--start and --finish run the same thing in two separate steps.)
 
 The browser login uses the same flow as the official Moodle app, so it works
 wherever the Moodle app works with your university login.
@@ -35,6 +35,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import webbrowser
 from pathlib import Path
 from urllib.parse import unquote, urlencode
@@ -226,14 +227,29 @@ def start(url: str, open_browser: bool) -> None:
         webbrowser.open(link)
     print(
         "Opened the Moodle login in the browser.\n"
-        "Tell the user:\n"
-        "  1. Log in to Moodle in the browser window that just opened (university or Microsoft login).\n"
-        "  2. A page with a \"Continue\" button appears. Don't click it: right-click it and choose\n"
-        "     \"Copy Link Address\" (or \"Copy link\").\n"
-        "  3. Say \"done\" here.\n"
+        "  1. Log in to Moodle (university or Microsoft login).\n"
+        "  2. A page with a \"Continue\" button appears. Don't click it: right-click it and copy the link.\n"
         "If the login ends on the Moodle dashboard instead, open this address again:\n"
         f"  {link}"
     )
+
+
+def wait_for_link(minutes: float) -> str:
+    """Wait until a new moodlemobile:// link shows up in the clipboard."""
+    before = read_clipboard()
+    deadline = time.monotonic() + minutes * 60
+    while time.monotonic() < deadline:
+        text = read_clipboard()
+        if text and text != before and "moodlemobile://token=" in text:
+            return text
+        time.sleep(1)
+    sys.exit(f"No Moodle link was copied within {minutes:g} minutes. Run --login again.")
+
+
+def login(url: str, open_browser: bool, minutes: float, target: str) -> None:
+    start(url, open_browser)
+    print(f"\nWaiting up to {minutes:g} minutes for the copied link …", flush=True)
+    finish(url, wait_for_link(minutes), target)
 
 
 def finish(url: str, link: str | None, target: str) -> None:
@@ -327,15 +343,20 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Get a Moodle token and add the Moodle MCP server to Claude.")
     parser.add_argument("url", help="Your Moodle address, e.g. https://moodle.my-university.edu")
     mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--login", action="store_true",
+                      help="open the Moodle login, wait for the copied link and add the server to Claude")
     mode.add_argument("--start", action="store_true", help="step 1: open the Moodle login in the browser")
     mode.add_argument("--finish", action="store_true", help="step 2: read the copied link and add the server to Claude")
-    parser.add_argument("--no-browser", action="store_true", help="with --start: only print the login address")
+    parser.add_argument("--no-browser", action="store_true", help="with --login/--start: only print the login address")
+    parser.add_argument("--minutes", type=float, default=8, help="with --login: how long to wait for the link (default 8)")
     parser.add_argument("--link", help="with --finish: the moodlemobile:// link instead of reading the clipboard")
     parser.add_argument("--target", choices=["auto", "desktop", "code", "none"], default="auto",
-                        help="with --finish: where to add the server (default: every Claude app found)")
+                        help="with --login/--finish: where to add the server (default: every Claude app found)")
     args = parser.parse_args()
     url = normalise(args.url)
-    if args.start:
+    if args.login:
+        login(url, not args.no_browser, args.minutes, args.target)
+    elif args.start:
         start(url, not args.no_browser)
     elif args.finish:
         finish(url, args.link, args.target)

@@ -52,7 +52,7 @@ You need **Python 3.10 or newer** ([python.org](https://www.python.org/downloads
    Install the Moodle MCP server for me by following https://raw.githubusercontent.com/EmreAI/claude-mcp/main/moodle-mcp/INSTALL_WITH_CLAUDE.md. My Moodle is https://moodle.novasbe.pt
    ```
 
-3. Claude downloads and installs everything, then opens the Moodle login in your browser. Log in, right-click **Continue** → **Copy Link Address**, and say "done". Claude reads the link from your clipboard, so your login never appears in the chat.
+3. Claude installs everything and opens Moodle in your browser. Log in, then on the page with the **Continue** button, don't click it: right-click it and copy the link. That's it. Claude notices the copied link, finishes the setup and clears your clipboard, so your login never appears in the chat.
 4. Quit and reopen the Claude desktop app (or start a new Claude Code session) and ask: *"What's due in Moodle this week?"*
 
 Claude follows [INSTALL_WITH_CLAUDE.md](INSTALL_WITH_CLAUDE.md). It asks before installing Python if you don't have it.

@@ -38,24 +38,24 @@ Windows: `cd $env:USERPROFILE\moodle-mcp; py -m venv .venv; .venv\Scripts\pip in
 
 ## 4. Log in
 
-Run `$PY $DIR/get_token.py <MOODLE_URL> --start`. It opens the Moodle login in the browser and prints what the user has to do. Pass that on in short:
+First tell the user, briefly, what is about to happen, because the next command waits for them:
 
-1. Log in to Moodle in the browser window that opened.
-2. On the page with the **Continue** button, don't click it: right-click it → **Copy Link Address** (or **Copy link**).
-3. Say "done".
+1. Moodle opens in their browser. They log in as usual.
+2. A page with a **Continue** button appears. They must **not** click it (it is meant for the Moodle phone app). Instead: right-click **Continue** → copy the link (**Copy Link Address** / **Copy link**).
+3. That's all. The setup notices the copied link by itself, they don't need to reply.
 
-When they say done, run `$PY $DIR/get_token.py <MOODLE_URL> --finish`. It reads the link from the clipboard, checks the token with Moodle, clears the clipboard and adds the server to every Claude app it finds (the Claude desktop app and Claude Code). It prints who is logged in and where the server was added, never the token.
+Then run `$PY $DIR/get_token.py <MOODLE_URL> --login` with a timeout of about 10 minutes (it waits up to 8). It opens the login, waits until the link appears in the clipboard, checks the token with Moodle, clears the clipboard and adds the server to every Claude app it finds (the Claude desktop app and Claude Code). It prints who is logged in and where the server was added, never the token.
 
 If it fails:
 
-- **"not a moodlemobile link" or empty clipboard:** the user copied something else or clicked Continue. Ask them to right-click **Continue** → **Copy Link Address** again, then run `--finish` again.
-- **The login ends on the Moodle dashboard, no Continue page:** run `--start` again; they're logged in now, so it goes straight to the Continue page.
+- **No link copied in time:** ask whether they clicked **Continue** instead of copying it, or ended up on the Moodle dashboard. Run `--login` again; if they are already logged in, the Continue page appears straight away.
 - **The token doesn't work, or there's no Continue page at all:** the university may have turned off the Moodle app. Tell the user to check *Profile → Preferences → Security keys* in Moodle or ask Moodle support. Don't try other ways around it.
-- **The Claude desktop app or Claude Code was not found:** tell the user what `--finish` printed. They can run `$PY $DIR/get_token.py <MOODLE_URL>` in a terminal themselves, which prints the config to paste.
+- **The Claude desktop app or Claude Code was not found:** tell the user what the script printed. They can run `$PY $DIR/get_token.py <MOODLE_URL>` in a terminal themselves, which prints the config to paste.
+- **Your shell can't wait that long:** run `--start` instead, let the user copy the link and tell you, then run `--finish`, which reads the link from the clipboard.
 
 ## 5. Finish
 
-Tell the user what `--finish` printed and how to load the server:
+Tell the user what the script printed and how to load the server:
 
 - **Claude desktop app:** quit it completely and reopen it.
 - **Claude Code:** start a new session, or run `/mcp` and reconnect `moodle`.
