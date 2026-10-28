@@ -43,7 +43,21 @@ It uses Moodle's official web service API, the same one the Moodle mobile app us
 
 You need **Python 3.10 or newer** ([python.org](https://www.python.org/downloads/)) and the **Claude desktop app** or **Claude Code**. Local MCP servers don't run in Claude on the web.
 
-### macOS and Linux
+### The easy way: ask Claude
+
+1. Open **Claude Code**: in the Claude desktop app, switch to the **Code** tab, or run `claude` in a terminal. Regular chats can't install software on your computer.
+2. Paste this, with your own Moodle address if you're not at Nova SBE:
+
+   ```
+   Install the Moodle MCP server for me by following https://raw.githubusercontent.com/EmreAI/claude-mcp/main/moodle-mcp/INSTALL_WITH_CLAUDE.md. My Moodle is https://moodle.novasbe.pt
+   ```
+
+3. Claude downloads and installs everything, then opens the Moodle login in your browser. Log in, right-click **Continue** → **Copy Link Address**, and say "done". Claude reads the link from your clipboard, so your login never appears in the chat.
+4. Quit and reopen the Claude desktop app (or start a new Claude Code session) and ask: *"What's due in Moodle this week?"*
+
+Claude follows [INSTALL_WITH_CLAUDE.md](INSTALL_WITH_CLAUDE.md). It asks before installing Python if you don't have it.
+
+### By hand: macOS and Linux
 
 1. Download **[moodle-mcp.zip](https://github.com/EmreAI/claude-mcp/raw/main/dist/moodle-mcp.zip)**, unzip it and move the `moodle-mcp` folder somewhere it can stay, e.g. your home folder.
 2. Open Terminal and run, with your Moodle address:
@@ -58,7 +72,7 @@ You need **Python 3.10 or newer** ([python.org](https://www.python.org/downloads
    - **Claude desktop app:** open **Settings → Developer → Edit Config**, paste the `"moodle": { … }` block inside `"mcpServers": { … }`, save and restart Claude.
 4. Start a new chat and ask: *"What's due in Moodle this week?"*
 
-### Windows
+### By hand: Windows
 
 In PowerShell, inside the unzipped `moodle-mcp` folder:
 
@@ -102,7 +116,8 @@ After changing `server.py`, restart the server: open a new chat, or in Claude Co
 ```
 moodle-mcp/
 ├── server.py           the MCP server and its 21 tools
-├── get_token.py        gets your token and prints the Claude config
+├── get_token.py        gets your token and adds the server to Claude
 ├── setup.sh            installs everything and runs get_token.py
+├── INSTALL_WITH_CLAUDE.md   the steps Claude follows when it installs for you
 └── requirements.txt    mcp and httpx
 ```

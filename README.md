@@ -8,7 +8,15 @@ MCP servers that connect Claude to the tools you already use.
 
 ## Install
 
-Each server folder has its own README with the setup steps. In short:
+**The easy way:** open Claude Code (the **Code** tab in the Claude desktop app) and paste:
+
+```
+Install the Moodle MCP server for me by following https://raw.githubusercontent.com/EmreAI/claude-mcp/main/moodle-mcp/INSTALL_WITH_CLAUDE.md. My Moodle is https://moodle.novasbe.pt
+```
+
+Claude installs everything and only needs you to log in to Moodle in your browser.
+
+**By hand:** each server folder has its own README with the setup steps. In short:
 
 1. Download the server's ZIP from the table above and unzip it somewhere it can stay.
 2. Run its setup (for Moodle: `sh moodle-mcp/setup.sh https://your-moodle`). It prints the config for Claude.

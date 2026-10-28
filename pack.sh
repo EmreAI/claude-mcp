@@ -7,6 +7,6 @@ for d in */; do
   d=${d%/}
   [ -f "$d/server.py" ] || continue
   rm -f "dist/$d.zip"
-  zip -rq -X "dist/$d.zip" "$d" -x '*.DS_Store' "$d/.venv/*" '*__pycache__*' '*.pyc' "$d/.env"
+  zip -rq -X "dist/$d.zip" "$d" -x '*.DS_Store' "$d/.venv/*" '*__pycache__*' '*.pyc' "$d/.env" "$d/.login-pending.json"
   echo "dist/$d.zip"
 done
