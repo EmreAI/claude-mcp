@@ -50,7 +50,7 @@ If it fails:
 
 - **No link copied in time:** ask whether they clicked **Continue** instead of copying it, or ended up on the Moodle dashboard. Run `--login` again; if they are already logged in, the Continue page appears straight away.
 - **The token doesn't work, or there's no Continue page at all:** the university may have turned off the Moodle app. Tell the user to check *Profile → Preferences → Security keys* in Moodle or ask Moodle support. Don't try other ways around it.
-- **The Claude desktop app or Claude Code was not found:** tell the user what the script printed. They can run `$PY $DIR/get_token.py <MOODLE_URL>` in a terminal themselves, which prints the config to paste.
+- **The Claude desktop app or Claude Code was not found:** tell the user what the script printed.
 - **Your shell can't wait that long:** run `--start` instead, let the user copy the link and tell you, then run `--finish`, which reads the link from the clipboard.
 
 ## 5. Finish

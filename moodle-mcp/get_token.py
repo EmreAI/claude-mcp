@@ -2,7 +2,7 @@
 
 Two ways to use it:
 
-A) Yourself, in a terminal (setup.sh does this for you):
+A) Yourself, in a terminal:
 
        .venv/bin/python get_token.py https://moodle.example.edu
 
