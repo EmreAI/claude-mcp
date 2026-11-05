@@ -37,7 +37,8 @@ RENEW_TOKEN_HINT = (
     "&passport=<PASSPORT>&urlscheme=moodlemobile&confirmed=1 "
     "(2) Ask the user to sign in there themselves and say when done; never type their password. "
     "(3) Read the href of the link starting with moodlemobile://token= via javascript, "
-    "(4) decode it with get_token.decode_launch_url(link, MOODLE_URL, passport) from {folder}, "
+    "(4) decode it with get_token.decode_launch_url(link, MOODLE_URL, passport) from {folder} "
+    "(returns token and whether the signature matches), "
     "check it with core_webservice_get_site_info, then back up ~/.claude.json and set "
     "mcpServers.moodle.env.MOODLE_TOKEN to the new token. "
     "(5) The running server keeps the old token until the session restarts; until then call "
@@ -49,7 +50,8 @@ mcp = MCPServer(
     instructions=(
         "Access the user's Moodle courses: course list, course contents and files, "
         "what's new, assignments and feedback, quizzes, deadlines, calendar, grades, "
-        "progress, forums, pages and books, notifications and messages. Read-only. "
+        "progress, forums, pages and books, notifications and messages, and course "
+        "syllabi (find_syllabus / download_syllabus, also for courses not enrolled in). Read-only. "
         "Call list_courses first to get course ids. Times are shown in the server's "
         "local time zone. If a tool reports an invalid token, follow the renewal "
         "steps in that error message."
@@ -546,6 +548,132 @@ async def download_files(
         out.append("Already there: " + ", ".join(skipped))
     out += [f"FAILED {x}" for x in failed]
     return "\n".join(out)
+
+
+SYLLABI_COURSES = (870, 389)  # "Courses Syllabi" 2026/27 and 2025/26; their databases list every course
+SYLLABUS_URL = (
+    "https://netpa.novasbe.pt/netpa/doc?stage=FichaUnidadeCurricular&_event=publicacaoFUC"
+    "&codeDiscip={code}&anoLectivo={year}&codInstituic=1&codePeriodo={period}"
+    "&codeCurso=null&codePlano=null&codeRamo=null&docIsAttachment=true"
+)
+_ENTRY_NAME = re.compile(r"^(\d+)\s*-\s*(.*?)\s*-\s*\d{4}_(\w+)$")
+_syllabus_index: list[dict[str, str]] | None = None
+
+
+async def _load_syllabus_index() -> list[dict[str, str]]:
+    """All (code, name, period) combinations listed in the Moodle syllabus databases, cached."""
+    global _syllabus_index
+    if _syllabus_index is not None:
+        return _syllabus_index
+    seen: dict[tuple[str, str], dict[str, str]] = {}
+    for course in SYLLABI_COURSES:
+        try:
+            dbs = (await call("mod_data_get_databases_by_courses", courseids=[course])).get("databases", [])
+        except MoodleError:
+            continue
+        for db in dbs:
+            page = 0
+            while True:
+                res = await call("mod_data_get_entries", databaseid=db["id"], page=page, perpage=500, returncontents=1)
+                for entry in res.get("entries", []):
+                    for content in entry.get("contents", []):
+                        m = _ENTRY_NAME.match((content.get("content") or "").strip())
+                        if m:
+                            code, name, period = m.groups()
+                            seen.setdefault((code, period), {"code": code, "name": name.strip(), "period": period})
+                if (page + 1) * 500 >= res.get("totalcount", 0):
+                    break
+                page += 1
+    _syllabus_index = sorted(seen.values(), key=lambda e: (e["name"].lower(), e["period"]))
+    return _syllabus_index
+
+
+async def _match_syllabi(query: str, period: str | None) -> list[dict[str, str]]:
+    q = query.strip().lower()
+    index = await _load_syllabus_index()
+    if q.isdigit():
+        hits = [e for e in index if e["code"] == q]
+        if not hits:  # a code Moodle does not list: try the given period, or all of them
+            periods = [period.upper()] if period else ["T1", "T2", "T3", "T4", "S1", "S2"]
+            hits = [{"code": q, "name": q, "period": p} for p in periods]
+    else:
+        words = q.split()
+        hits = [e for e in index if all(w in e["name"].lower() for w in words)]
+    if period:
+        hits = [e for e in hits if e["period"].upper() == period.upper()]
+    return hits
+
+
+@mcp.tool()
+async def find_syllabus(query: str) -> str:
+    """Find courses by name or course code and show the periods they are offered in.
+
+    Looks through the school's syllabus lists (this and last year), so it also finds
+    courses you are not enrolled in, e.g. electives of later terms.
+
+    Args:
+        query: Part of the course name (e.g. "machine learning") or the course code (e.g. 2758).
+    """
+    hits = await _match_syllabi(query, None)
+    if not hits:
+        return "No matching course found."
+    return "\n".join(f"- {e['code']} {e['name']} ({e['period']})" for e in hits[:60])
+
+
+@mcp.tool()
+async def download_syllabus(
+    query: str,
+    period: str | None = None,
+    read: bool = False,
+) -> str:
+    """Download the syllabus PDF of one or more courses (no enrolment needed).
+
+    Uses the newest published version: 2026/27 if available, otherwise 2025/26 or 2024/25;
+    the result says which year each file is from. Saved in ~/Downloads/Moodle/Syllabi.
+
+    Args:
+        query: Course code (e.g. 2758) or part of the course name. Several matches are all downloaded (max 10).
+        period: Optional period filter such as T1, T2, T3, T4, S1 or S2.
+        read: Also return the extracted text of each syllabus.
+    """
+    hits = await _match_syllabi(query, period)
+    if not hits:
+        return "No matching course found. Try find_syllabus with a different search."
+    if len(hits) > 10:
+        listing = "\n".join(f"- {e['code']} {e['name']} ({e['period']})" for e in hits[:30])
+        return f"{len(hits)} courses match; narrow the search or give a period:\n{listing}"
+
+    folder = DOWNLOAD_DIR / "Syllabi"
+    folder.mkdir(parents=True, exist_ok=True)
+    out: list[str] = []
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        for e in hits:
+            found = None
+            for year in ("202627", "202526", "202425"):
+                resp = await client.get(SYLLABUS_URL.format(code=e["code"], year=year, period=e["period"]))
+                if resp.status_code == 200 and resp.content.startswith(b"%PDF"):
+                    found = (year, resp.content)
+                    break
+            if not found:
+                if e["name"] != e["code"]:  # a guessed period failing is not worth reporting
+                    out.append(f"- {e['code']} {e['name']} ({e['period']}): no published syllabus found")
+                continue
+            year, body = found
+            label = f"{year[:4]}/{year[4:]}"
+            target = folder / _safe_name(f"{e['code']} {e['name']} {e['period']} {label.replace('/', '-')}.pdf")
+            target.write_bytes(body)
+            out.append(f"- {e['code']} {e['name']} ({e['period']}), syllabus {label}: {target}")
+            if read:
+                out.append(_pdf_text(target))
+    return "\n".join(out) or "No published syllabus found."
+
+
+def _pdf_text(path: Path) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return "(Install pypdf in the server's venv to get the text.)"
+    return "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
 
 
 @mcp.tool()

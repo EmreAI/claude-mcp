@@ -38,6 +38,8 @@ It uses Moodle's official web service API, the same one the Moodle mobile app us
 | `search_courses` | Search all courses on the site |
 | `download_file` | Download one course file to `~/Downloads/Moodle` |
 | `download_files` | Download a whole section (e.g. "Week 2"), folder or course into `~/Downloads/Moodle/<Course>/<Section>/…`. Files you already have are skipped |
+| `find_syllabus` | Find courses by name or code, including electives you're not enrolled in, with their periods (Nova SBE) |
+| `download_syllabus` | Download a course's syllabus PDF, newest published year first; `read=true` also returns the text. Saved in `~/Downloads/Moodle/Syllabi` (Nova SBE) |
 
 ## Install
 
@@ -78,7 +80,7 @@ After changing `server.py`, restart the server: open a new chat, or in Claude Co
 
 ```
 moodle-mcp/
-├── server.py                 the MCP server and its 21 tools
+├── server.py                 the MCP server and its 23 tools
 ├── get_token.py              logs you in and adds the server to Claude
 ├── INSTALL_WITH_CLAUDE.md    the steps Claude follows to install it
 └── requirements.txt          mcp and httpx
