@@ -30,6 +30,20 @@ MOODLE_URL = os.environ.get("MOODLE_URL", "").rstrip("/")
 MOODLE_TOKEN = os.environ.get("MOODLE_TOKEN", "")
 DOWNLOAD_DIR = Path(os.environ.get("MOODLE_DOWNLOAD_DIR", "~/Downloads/Moodle")).expanduser()
 
+RENEW_TOKEN_HINT = (
+    "The Moodle token is invalid or expired. Renew it like this: "
+    "(1) Open this URL in the built-in browser (preview_start with url), using a fresh random "
+    "16-hex-char passport: {url}/admin/tool/mobile/launch.php?service=moodle_mobile_app"
+    "&passport=<PASSPORT>&urlscheme=moodlemobile&confirmed=1 "
+    "(2) Ask the user to sign in there themselves and say when done; never type their password. "
+    "(3) Read the href of the link starting with moodlemobile://token= via javascript, "
+    "(4) decode it with get_token.decode_launch_url(link, MOODLE_URL, passport) from {folder}, "
+    "check it with core_webservice_get_site_info, then back up ~/.claude.json and set "
+    "mcpServers.moodle.env.MOODLE_TOKEN to the new token. "
+    "(5) The running server keeps the old token until the session restarts; until then call "
+    "the REST API directly with the new token. Never show the token in chat."
+)
+
 mcp = MCPServer(
     name="moodle",
     instructions=(
@@ -37,7 +51,8 @@ mcp = MCPServer(
         "what's new, assignments and feedback, quizzes, deadlines, calendar, grades, "
         "progress, forums, pages and books, notifications and messages. Read-only. "
         "Call list_courses first to get course ids. Times are shown in the server's "
-        "local time zone."
+        "local time zone. If a tool reports an invalid token, follow the renewal "
+        "steps in that error message."
     ),
 )
 
@@ -82,6 +97,8 @@ async def call(function: str, **params: Any) -> Any:
     resp.raise_for_status()
     result = resp.json()
     if isinstance(result, dict) and "exception" in result:
+        if result.get("errorcode") == "invalidtoken":
+            raise MoodleError(RENEW_TOKEN_HINT.format(url=MOODLE_URL, folder=Path(__file__).parent))
         raise MoodleError(f"{function}: {result.get('message')} ({result.get('errorcode')})")
     return result
 
