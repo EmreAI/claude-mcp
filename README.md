@@ -4,7 +4,7 @@ MCP servers that connect Claude to the tools you already use.
 
 | Server | What it does | Download |
 |---|---|---|
-| [Moodle](moodle-mcp/) | Read your Moodle courses: what's new, deadlines, grades, feedback, forums and messages. Download a whole week's files in one go. | [ZIP](https://github.com/EmreAI/claude-mcp/raw/main/dist/moodle-mcp.zip) |
+| [Moodle](moodle-mcp/) | Read your Moodle courses: what's new, deadlines, grades, feedback, forums and messages. Download a whole week's files in one go. Light on tokens: 6 tools load instead of 23. | [ZIP](https://github.com/EmreAI/claude-mcp/raw/main/dist/moodle-mcp.zip) |
 
 ## Install
 

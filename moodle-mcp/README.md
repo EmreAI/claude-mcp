@@ -1,11 +1,14 @@
 # Moodle MCP
 
+**Version 2.** Lighter than version 1: Claude loads 6 tools instead of 23 (about 70% fewer tokens), and `whats_new` can download the new files in the same call.
+
 An MCP server that lets Claude read your Moodle: courses, files, grades, deadlines, feedback, forums and messages. Ask *"What's due this week?"* or *"Download all slides from Week 3"* and Claude looks it up for you.
 
 It uses Moodle's official web service API, the same one the Moodle mobile app uses. It only reads: it never submits assignments, posts in forums or sends messages. Tested with Nova SBE's Moodle, and it should work with any Moodle site that allows the Moodle app.
 
 ## What you can ask
 
+- *"Download everything new from this week."*
 - *"What's new in my courses since last week?"*
 - *"Which assignments are due in the next 14 days, and have I submitted them?"*
 - *"Show my grades in Corporate Finance."*
@@ -15,31 +18,18 @@ It uses Moodle's official web service API, the same one the Moodle mobile app us
 
 ## Tools
 
+The server is built to be light. Claude only loads five everyday tools plus one `more` tool, about 1,100 tokens instead of 3,700 for 23 separate tools. The common questions ("what's new?", "what's due?", "download Week 3") take a single call.
+
 | Tool | What it does |
 |---|---|
-| `site_info` | Checks the connection (site and user) |
+| `whats_new` | New or changed files, activities and forum posts in the last days (default 7), across all current courses. `download=true` saves the new files straight away |
+| `upcoming_deadlines` | Deadlines from the Moodle timeline |
+| `download_files` | Download a whole section (e.g. "Week 2"), folder or course into `~/Downloads/Moodle/<Course>/<Section>/…`. Files you already have are skipped |
 | `list_courses` | Your enrolled courses with their ids |
 | `get_course_contents` | Sections, activities and files of a course |
-| `whats_new` | New or changed files, activities and forum posts in the last days (default 7), across all current courses |
-| `list_assignments` | Assignments with due date and submission status |
-| `assignment_feedback` | Grades, comments and feedback files for graded assignments |
-| `quiz_results` | Quiz attempts and grades |
-| `quiz_attempt_review` | Questions of a finished attempt, right or wrong (if the teacher allows reviews) |
-| `upcoming_deadlines` | Deadlines from the Moodle timeline |
-| `calendar_events` | Calendar events |
-| `get_grades` | Your grades in a course |
-| `course_progress` | Which activities Moodle marks as done |
-| `list_forum_posts` | Latest discussions and announcements in a course |
-| `read_discussion` | All posts of a discussion |
-| `read_page` | Text of pages, books, labels and links |
-| `notifications` | Moodle notifications (new posts, grades, reminders) |
-| `list_messages` | Your Moodle conversations |
-| `read_conversation` | Messages of one conversation |
-| `search_courses` | Search all courses on the site |
-| `download_file` | Download one course file to `~/Downloads/Moodle` |
-| `download_files` | Download a whole section (e.g. "Week 2"), folder or course into `~/Downloads/Moodle/<Course>/<Section>/…`. Files you already have are skipped |
-| `find_syllabus` | Find courses by name or code, including electives you're not enrolled in, with their periods (Nova SBE) |
-| `download_syllabus` | Download a course's syllabus PDF, newest published year first; `read=true` also returns the text. Saved in `~/Downloads/Moodle/Syllabi` (Nova SBE) |
+| `more` | Everything else, called by name: `list_assignments`, `assignment_feedback`, `get_grades`, `quiz_results`, `quiz_attempt_review`, `course_progress`, `calendar_events`, `list_forum_posts`, `read_discussion`, `read_page`, `notifications`, `list_messages`, `read_conversation`, `search_courses`, `find_syllabus`, `download_syllabus` (Nova SBE), `download_file`, `site_info` |
+
+To expose all 23 tools separately instead, set `MOODLE_ALL_TOOLS=1`.
 
 ## Install
 
@@ -73,6 +63,7 @@ The token gives read access to your Moodle account. Treat it like a password.
 | `MOODLE_URL` | Your Moodle address, e.g. `https://moodle.your-university.edu` |
 | `MOODLE_TOKEN` | Your token, set by the installer |
 | `MOODLE_DOWNLOAD_DIR` | Optional download folder (default `~/Downloads/Moodle`) |
+| `MOODLE_ALL_TOOLS` | Optional; `1` lists every tool separately instead of behind `more` |
 
 After changing `server.py`, restart the server: open a new chat, or in Claude Code run `/mcp` → moodle → Reconnect.
 
@@ -80,7 +71,7 @@ After changing `server.py`, restart the server: open a new chat, or in Claude Co
 
 ```
 moodle-mcp/
-├── server.py                 the MCP server and its 23 tools
+├── server.py                 the MCP server: 5 core tools + `more` for 18 others
 ├── get_token.py              logs you in and adds the server to Claude
 ├── INSTALL_WITH_CLAUDE.md    the steps Claude follows to install it
 └── requirements.txt          mcp and httpx

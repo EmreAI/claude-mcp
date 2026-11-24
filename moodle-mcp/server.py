@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import inspect
 import json
 import logging
 import os
@@ -48,13 +49,10 @@ RENEW_TOKEN_HINT = (
 mcp = MCPServer(
     name="moodle",
     instructions=(
-        "Access the user's Moodle courses: course list, course contents and files, "
-        "what's new, assignments and feedback, quizzes, deadlines, calendar, grades, "
-        "progress, forums, pages and books, notifications and messages, and course "
-        "syllabi (find_syllabus / download_syllabus, also for courses not enrolled in). Read-only. "
-        "Call list_courses first to get course ids. Times are shown in the server's "
-        "local time zone. If a tool reports an invalid token, follow the renewal "
-        "steps in that error message."
+        "Read-only access to the user's Moodle. Everyday questions need one call: "
+        "whats_new (download=true saves the new files), upcoming_deadlines, download_files. "
+        "Grades, feedback, quizzes, forums, messages, syllabi etc. go through the `more` tool. "
+        "Times are local. If a tool reports an invalid token, follow the renewal steps in that error."
     ),
 )
 
@@ -238,7 +236,6 @@ UPDATE_KINDS = {
 _QUIZ_NOISE = re.compile(r"^(//|Flag question|Remove flag|Question text|Question \d+|Correct|Incorrect|Partially correct|Mark [\d.,]+ out of [\d.,]+)$")
 
 
-@mcp.tool()
 async def site_info() -> str:
     """Show which Moodle site and user this server is connected to."""
     info = await call("core_webservice_get_site_info")
@@ -249,7 +246,7 @@ async def site_info() -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def list_courses(include_past: bool = False) -> str:
     """List the courses the user is enrolled in, with their ids.
 
@@ -272,7 +269,7 @@ async def list_courses(include_past: bool = False) -> str:
     return "\n".join(lines) or "No courses found."
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def get_course_contents(course_id: int, section: str | None = None) -> str:
     """Show a course's sections, activities and files.
 
@@ -300,13 +297,13 @@ async def get_course_contents(course_id: int, section: str | None = None) -> str
                 out.append(f"    {desc}")
             for f in m.get("contents") or []:
                 if f.get("type") == "file":
-                    out.append(f"    file: {f['filename']} ({f.get('filesize', 0) // 1024} KB) url: {f['fileurl']}")
+                    # No file URL: download_files(module_id=...) fetches them, and URLs cost many tokens.
+                    out.append(f"    file: {f['filename']} ({f.get('filesize', 0) // 1024} KB)")
                 elif f.get("type") == "url":
                     out.append(f"    link: {f.get('fileurl')}")
     return "\n".join(out) or "No contents found."
 
 
-@mcp.tool()
 async def list_assignments(course_id: int | None = None, only_open: bool = True) -> str:
     """List assignments with due dates and submission status.
 
@@ -346,7 +343,7 @@ async def list_assignments(course_id: int | None = None, only_open: bool = True)
     return "\n".join(out) or "No assignments found."
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def upcoming_deadlines(days: int = 14) -> str:
     """List upcoming deadlines and to-dos from the Moodle timeline.
 
@@ -367,7 +364,6 @@ async def upcoming_deadlines(days: int = 14) -> str:
     return "\n".join(out) or f"No deadlines in the next {days} days."
 
 
-@mcp.tool()
 async def calendar_events(days: int = 14) -> str:
     """List calendar events (lectures, deadlines, site events) in the coming days.
 
@@ -386,7 +382,6 @@ async def calendar_events(days: int = 14) -> str:
     return "\n".join(out) or f"No events in the next {days} days."
 
 
-@mcp.tool()
 async def get_grades(course_id: int) -> str:
     """Show the user's grade items and grades in a course.
 
@@ -405,7 +400,6 @@ async def get_grades(course_id: int) -> str:
     return "\n".join(out) or "No grades found."
 
 
-@mcp.tool()
 async def list_forum_posts(course_id: int, limit: int = 10) -> str:
     """List the latest discussions from all forums in a course (e.g. announcements).
 
@@ -426,7 +420,6 @@ async def list_forum_posts(course_id: int, limit: int = 10) -> str:
     return "\n".join(out) or "No forums found."
 
 
-@mcp.tool()
 async def read_discussion(discussion_id: int) -> str:
     """Read all posts of a forum discussion.
 
@@ -441,7 +434,6 @@ async def read_discussion(discussion_id: int) -> str:
     return "\n\n".join(out) or "No posts found."
 
 
-@mcp.tool()
 async def search_courses(query: str) -> str:
     """Search all courses on the site by name (not only enrolled ones).
 
@@ -453,12 +445,11 @@ async def search_courses(query: str) -> str:
     return "\n".join(out) or "No courses found."
 
 
-@mcp.tool()
 async def download_file(file_url: str, subfolder: str | None = None) -> str:
-    """Download a course file (a url from get_course_contents) to the local download folder.
+    """Download one Moodle file by URL (e.g. a feedback file from assignment_feedback).
 
     Args:
-        file_url: The pluginfile URL shown by get_course_contents.
+        file_url: A pluginfile URL from this Moodle site.
         subfolder: Optional subfolder name, e.g. the course short name.
     """
     _check_site(file_url)
@@ -474,7 +465,7 @@ async def download_file(file_url: str, subfolder: str | None = None) -> str:
 _NOT_MATERIALS = {"page", "book", "url", "label", "forum", "quiz", "lesson", "glossary", "wiki"}
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 async def download_files(
     course_id: int,
     section: str | None = None,
@@ -512,23 +503,34 @@ async def download_files(
                 continue
             if not m.get("uservisible", True) or m["modname"] in _NOT_MATERIALS:
                 continue
-            files = [f for f in m.get("contents") or [] if f.get("type") == "file" and f.get("fileurl")]
-            # A single-file resource goes straight into the section folder; folders keep their own.
-            folder = base / _safe_name(sname)
-            if m["modname"] != "resource" or len(files) > 1:
-                folder = folder / _safe_name(m["name"])
-            for f in files:
-                parts = [_safe_name(p) for p in (f.get("filepath") or "/").split("/") if p]
-                target = folder.joinpath(*parts, _safe_name(f["filename"])).resolve()
-                if not target.is_relative_to(base):
-                    continue
-                jobs.append((f["fileurl"], target, f.get("filesize") or 0))
+            jobs += _file_jobs(base, sname, m)
 
     if not jobs:
         return "No files found for that selection."
     if len(jobs) > 300:
         raise MoodleError(f"{len(jobs)} files found. Choose a section or module to download fewer than 300.")
+    return await _save_all(base, jobs, overwrite)
 
+
+def _file_jobs(base: Path, sname: str, m: dict[str, Any], since: int = 0) -> list[tuple[str, Path, int]]:
+    """(url, target, size) for a module's files under base/<section>/…, optionally only files changed since."""
+    files = [f for f in m.get("contents") or [] if f.get("type") == "file" and f.get("fileurl")]
+    # A single-file resource goes straight into the section folder; folders keep their own.
+    folder = base / _safe_name(sname)
+    if m["modname"] != "resource" or len(files) > 1:
+        folder = folder / _safe_name(m["name"])
+    jobs = []
+    for f in files:
+        if since and max(f.get("timecreated") or 0, f.get("timemodified") or 0) < since:
+            continue
+        parts = [_safe_name(p) for p in (f.get("filepath") or "/").split("/") if p]
+        target = folder.joinpath(*parts, _safe_name(f["filename"])).resolve()
+        if target.is_relative_to(base):
+            jobs.append((f["fileurl"], target, f.get("filesize") or 0))
+    return jobs
+
+
+async def _save_all(base: Path, jobs: list[tuple[str, Path, int]], overwrite: bool = False) -> str:
     saved, skipped, failed = [], [], []
     async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
         for url, target, size in jobs:
@@ -604,7 +606,6 @@ async def _match_syllabi(query: str, period: str | None) -> list[dict[str, str]]
     return hits
 
 
-@mcp.tool()
 async def find_syllabus(query: str) -> str:
     """Find courses by name or course code and show the periods they are offered in.
 
@@ -620,7 +621,6 @@ async def find_syllabus(query: str) -> str:
     return "\n".join(f"- {e['code']} {e['name']} ({e['period']})" for e in hits[:60])
 
 
-@mcp.tool()
 async def download_syllabus(
     query: str,
     period: str | None = None,
@@ -676,16 +676,19 @@ def _pdf_text(path: Path) -> str:
     return "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
 
 
-@mcp.tool()
-async def whats_new(days: int = 7, course_id: int | None = None) -> str:
+@mcp.tool(structured_output=False)
+async def whats_new(days: int = 7, course_id: int | None = None, download: bool = False) -> str:
     """Show what changed in the user's courses recently: new or updated files, activities and forum posts.
 
     Args:
         days: How many days back to look.
         course_id: Optional course id; all current courses if omitted.
+        download: Also save the new files to ~/Downloads/Moodle/<Course>/<Section>/ (existing ones are skipped).
     """
     since = int(datetime.now().timestamp()) - days * 86400
     courses = await _my_courses(course_id)
+    base = DOWNLOAD_DIR.resolve()
+    jobs: list[tuple[str, Path, int]] = []
 
     async def one_course(course: dict[str, Any]) -> list[str]:
         cid = course["id"]
@@ -715,7 +718,9 @@ async def whats_new(days: int = 7, course_id: int | None = None) -> str:
                 for f in m.get("contents") or []:
                     if f.get("type") == "file" and max(f.get("timecreated") or 0, f.get("timemodified") or 0) >= since:
                         path = (f.get("filepath") or "/").lstrip("/")
-                        lines.append(f"    file: {path}{f['filename']} ({_ts(f.get('timemodified'))}) url: {f['fileurl']}")
+                        lines.append(f"    file: {path}{f['filename']} ({_ts(f.get('timemodified'))})")
+                if download and m["modname"] not in _NOT_MATERIALS:
+                    jobs.extend(_file_jobs(base / _course_folder(course["fullname"]), sname, m, since))
             if "discussions" in kinds and m["modname"] == "forum":
                 try:
                     data = await call("mod_forum_get_forum_discussions", forumid=m["instance"], sortorder=1, page=0, perpage=20)
@@ -729,10 +734,12 @@ async def whats_new(days: int = 7, course_id: int | None = None) -> str:
     results = await asyncio.gather(*(one_course(c) for c in courses))
     out = [line for lines in results for line in lines]
     header = f"Changes since {_ts(since)} ({days} days)."
-    return header + ("\n" + "\n".join(out) if out else "\nNothing new.")
+    text = header + ("\n" + "\n".join(out) if out else "\nNothing new.")
+    if download:
+        text += "\n\n" + (await _save_all(base, jobs) if jobs else "No new files to download.")
+    return text
 
 
-@mcp.tool()
 async def course_progress(course_id: int) -> str:
     """Show which activities in a course the user has completed, as Moodle tracks it.
 
@@ -760,7 +767,6 @@ async def course_progress(course_id: int) -> str:
     return f"{done} of {total} tracked activities done.\n" + "\n".join(out)
 
 
-@mcp.tool()
 async def quiz_results(course_id: int) -> str:
     """List the quizzes in a course with the user's attempts and grades.
 
@@ -792,7 +798,6 @@ async def quiz_results(course_id: int) -> str:
     return "\n".join(out) or "No quizzes in this course."
 
 
-@mcp.tool()
 async def quiz_attempt_review(attempt_id: int) -> str:
     """Show the questions of a finished quiz attempt with the user's marks, if the teacher allows reviews.
 
@@ -811,7 +816,6 @@ async def quiz_attempt_review(attempt_id: int) -> str:
     return "\n".join(out)
 
 
-@mcp.tool()
 async def assignment_feedback(course_id: int | None = None) -> str:
     """Show grades and teacher feedback (comments, files) for the user's graded assignments.
 
@@ -844,7 +848,6 @@ async def assignment_feedback(course_id: int | None = None) -> str:
     return "\n".join(out) or "No graded assignments with feedback found."
 
 
-@mcp.tool()
 async def read_page(course_id: int, module_id: int) -> str:
     """Read the text of a page, book, label or link activity from get_course_contents.
 
@@ -890,7 +893,6 @@ async def read_page(course_id: int, module_id: int) -> str:
     raise MoodleError(f"read_page supports page, book, label and url activities, not '{kind}'.")
 
 
-@mcp.tool()
 async def notifications(limit: int = 20, only_unread: bool = False) -> str:
     """List the user's Moodle notifications (forum posts, grades, deadlines), newest first.
 
@@ -911,7 +913,6 @@ async def notifications(limit: int = 20, only_unread: bool = False) -> str:
     return head + ("\n".join(out) or "No notifications.")
 
 
-@mcp.tool()
 async def list_messages(limit: int = 10) -> str:
     """List the user's Moodle message conversations with the latest message.
 
@@ -932,7 +933,6 @@ async def list_messages(limit: int = 10) -> str:
     return "\n".join(out) or "No conversations."
 
 
-@mcp.tool()
 async def read_conversation(conversation_id: int, limit: int = 50) -> str:
     """Read the messages of a conversation from list_messages, oldest first.
 
@@ -951,6 +951,51 @@ async def read_conversation(conversation_id: int, limit: int = 50) -> str:
         who = "me" if msg.get("useridfrom") == me else names.get(msg.get("useridfrom"), str(msg.get("useridfrom")))
         out.append(f"{_ts(msg.get('timecreated'))} {who}: {_text(msg.get('text'), 3000)}")
     return "\n".join(out) or "No messages."
+
+
+# Rarely needed tools sit behind one `more` tool, so loading the server costs a few hundred
+# tokens instead of thousands. Set MOODLE_ALL_TOOLS=1 to expose them as separate tools.
+EXTRA_TOOLS = {
+    f.__name__: f
+    for f in (
+        list_assignments, assignment_feedback, get_grades, quiz_results, quiz_attempt_review,
+        course_progress, calendar_events, list_forum_posts, read_discussion, read_page,
+        notifications, list_messages, read_conversation, search_courses, find_syllabus,
+        download_syllabus, download_file, site_info,
+    )
+}
+
+
+def _usage(f: Any) -> str:
+    params = ", ".join(
+        p.name if p.default is inspect.Parameter.empty else f"{p.name}={p.default!r}"
+        for p in inspect.signature(f).parameters.values()
+    )
+    return f"{f.__name__}({params}): {(f.__doc__ or '').strip().splitlines()[0]}"
+
+
+async def more(tool: str, args: dict[str, Any] | None = None) -> str:
+    try:
+        f = EXTRA_TOOLS[tool]
+    except KeyError:
+        raise MoodleError(f"Unknown tool '{tool}'. Available: {', '.join(EXTRA_TOOLS)}") from None
+    try:
+        inspect.signature(f).bind(**(args or {}))
+    except TypeError as exc:
+        raise MoodleError(f"{exc}. Usage: {_usage(f)}") from None
+    return await f(**(args or {}))
+
+
+if os.environ.get("MOODLE_ALL_TOOLS") == "1":
+    for _f in EXTRA_TOOLS.values():
+        mcp.tool(structured_output=False)(_f)
+else:
+    mcp.tool(
+        structured_output=False,
+        description="More Moodle tools: call with tool=<name>, args={...}. Ids come from list_courses and "
+        "get_course_contents; file_url from assignment_feedback.\n"
+        + "\n".join(_usage(f).split(":")[0] for f in EXTRA_TOOLS.values()),
+    )(more)
 
 
 def main() -> None:
